@@ -46,15 +46,12 @@ namespace Carrot.IO.Ports
             // ---------------------------------------------------------
             // -1 0 0 0 0   | 立刻返回      |  立刻返回     | 立刻返回    |
             // -1 -1 -2 0 0 | 立刻返回      |  立刻返回     | 等待        |
-            // 2000 0 0 0 0 | 立刻返回      |  等待2000ms   | 等待2000ms |
-
-            // 数据满，数据未满立刻返回, 无数据等待: -1 -1 -2 0 0
-            // 数据满立刻返回，数据未满或无数据等待：Timeout 0 0 0 0
+            // 10 0 2000 0 0 | 立刻返回      |  等待2000ms   | 等待2000ms |
             COMMTIMEOUTS timeouts = new COMMTIMEOUTS
             {
-                ReadIntervalTimeout = -1,
-                ReadTotalTimeoutMultiplier = -1,
-                ReadTotalTimeoutConstant = -2,
+                ReadIntervalTimeout = -1,            // 字符间最大延迟, 此参数-1且TotalTimeout均为0为立即返回
+                ReadTotalTimeoutMultiplier = -1,     // 总延迟，字节数*延迟倍数, 0表示不使用超时
+                ReadTotalTimeoutConstant = -2,    // 总延迟，延迟常数, 0表示不使用超时
                 WriteTotalTimeoutMultiplier = 0,
                 WriteTotalTimeoutConstant = 0
             };
