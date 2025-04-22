@@ -39,6 +39,9 @@ namespace Carrot.IO.Ports
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool CancelIoEx(SafeFileHandle hFile, ref OVERLAPPED lpOverlapped);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool GetCommState(SafeFileHandle hFile, ref DCB lpDCB);
+
         // 配置串口参数
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool SetCommState(SafeFileHandle hFile, ref DCB lpDCB);

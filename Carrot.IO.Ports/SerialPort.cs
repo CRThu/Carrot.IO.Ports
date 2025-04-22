@@ -15,22 +15,23 @@ namespace Carrot.IO.Ports
         public SerialPort(string portName, int baudRate, int dataBits = 8/*, Parity parity = Parity.None, StopBits stopBits = StopBits.One*/)
         {
             // 打开串口
-            _handle = Win32Serial.CreateFile(
+            _handle = CreateFile(
                 @"\\.\" + portName, // 支持 COM 号大于 9
                 FileAccess.ReadWrite,
                 FileShare.None,
                 IntPtr.Zero,
                 FileMode.Open,
-                Win32Serial.FILE_FLAG_OVERLAPPED,
+                FILE_FLAG_OVERLAPPED,
                 IntPtr.Zero);
 
             if (_handle.IsInvalid)
-                throw new IOException("无法打开串口", Marshal.GetLastWin32Error());
+                throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
 
             //// 配置 DCB
             DCB dcb = new();
-            //if (!Win32Serial.GetCommState(_handle, ref dcb))
-            //    throw new IOException("获取串口状态失败", Marshal.GetLastWin32Error());
+            if (!GetCommState(_handle, ref dcb))
+                throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
+
 
             dcb.BaudRate = (uint)baudRate;
             dcb.ByteSize = (byte)dataBits;
@@ -38,23 +39,26 @@ namespace Carrot.IO.Ports
             //dcb.StopBits = (byte)(stopBits == StopBits.One ? 0 : stopBits == StopBits.Two ? 2 : 1);
 
             if (!SetCommState(_handle, ref dcb))
-                throw new IOException("配置串口失败", Marshal.GetLastWin32Error());
+                throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
 
-            // 配置超时（非阻塞模式）
-            Win32Serial.COMMTIMEOUTS timeouts = new COMMTIMEOUTS
+            // 配置超时
+            // 数据满，数据未满，无数据不等待直接返回：-1 0 0 0 0
+            // 数据满，数据未满立刻返回, 无数据等待: -1 -1 -2 0 0
+            // 数据满立刻返回，数据未满或无数据等待：Timeout 0 0 0 0
+            COMMTIMEOUTS timeouts = new COMMTIMEOUTS
             {
-                ReadIntervalTimeout = 0,
+                ReadIntervalTimeout = -1,
                 ReadTotalTimeoutMultiplier = 0,
                 ReadTotalTimeoutConstant = 0,
                 WriteTotalTimeoutMultiplier = 0,
                 WriteTotalTimeoutConstant = 0
             };
             if (!SetCommTimeouts(_handle, ref timeouts))
-                throw new IOException("配置超时失败", Marshal.GetLastWin32Error());
+                throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
         }
 
-        // 实现真正的可取消异步读取
-        public async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        // 可取消异步读取
+        public async Task<int> ReadAsync(byte[] buffer/*, int offset*/, int count, CancellationToken cancellationToken = default)
         {
             var overlapped = new OVERLAPPED();
             var waitHandle = new ManualResetEvent(false);
@@ -63,7 +67,6 @@ namespace Carrot.IO.Ports
 
             try
             {
-                // 注册取消回调
                 using (cancellationToken.Register(() => CancelOperation(key)))
                 {
                     int bytesRead;
@@ -71,32 +74,42 @@ namespace Carrot.IO.Ports
 
                     lock (_ioLock)
                     {
-                        if (_handle.IsClosed || cancellationToken.IsCancellationRequested)
-                            throw new OperationCanceledException();
+                        if (_handle.IsClosed)
+                            throw new ObjectDisposedException(nameof(SerialPort), "串口已被关闭");
+                        if (cancellationToken.IsCancellationRequested)
+                            return 0;
 
                         _pendingOperations.TryAdd(key, overlapped);
-                        immediateSuccess = ReadFile(_handle, buffer, count, out bytesRead, ref overlapped);
+                        immediateSuccess = ReadFile(
+                            _handle,
+                            buffer,
+                            count,
+                            out bytesRead,
+                            ref overlapped);
                     }
 
                     if (!immediateSuccess)
                     {
                         int error = Marshal.GetLastWin32Error();
                         if (error != ERROR_IO_PENDING)
-                            throw new IOException("读取启动失败", error);
+                        {
+                            // 立即失败的情况
+                            if (error == ERROR_OPERATION_ABORTED)
+                                return 0;
+                            throw new IOException(GetWin32ErrorMessage(error), error);
+                        }
 
-                        // 异步等待完成或取消
+                        // 使用带取消的异步等待
                         await WaitHandleAsync(waitHandle, cancellationToken);
-
                         if (cancellationToken.IsCancellationRequested)
-                            throw new OperationCanceledException();
+                            return 0;
 
-                        // 获取最终结果
                         if (!GetOverlappedResult(_handle, ref overlapped, out bytesRead, true))
                         {
                             error = Marshal.GetLastWin32Error();
                             if (error == ERROR_OPERATION_ABORTED)
-                                throw new OperationCanceledException();
-                            throw new IOException("异步读取失败", error);
+                                return 0;
+                            throw new IOException(GetWin32ErrorMessage(error), error);
                         }
                     }
                     return bytesRead;
@@ -109,7 +122,9 @@ namespace Carrot.IO.Ports
             }
         }
 
-        public async Task<int> WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+
+        // 可取消异步写入
+        public async Task<int> WriteAsync(byte[] buffer/*, int offset*/, int count, CancellationToken cancellationToken)
         {
             var overlapped = new OVERLAPPED();
             var waitHandle = new ManualResetEvent(false);
@@ -125,8 +140,10 @@ namespace Carrot.IO.Ports
 
                     lock (_ioLock)
                     {
-                        if (_handle.IsClosed || cancellationToken.IsCancellationRequested)
-                            throw new OperationCanceledException();
+                        if (_handle.IsClosed)
+                            throw new ObjectDisposedException(nameof(SerialPort), "串口已被关闭");
+                        if (cancellationToken.IsCancellationRequested)
+                            return 0;
 
                         _pendingOperations.TryAdd(key, overlapped);
                         immediateSuccess = WriteFile(
@@ -141,19 +158,24 @@ namespace Carrot.IO.Ports
                     {
                         int error = Marshal.GetLastWin32Error();
                         if (error != ERROR_IO_PENDING)
-                            throw new IOException("写入启动失败", error);
+                        {
+                            // 立即失败的情况
+                            if (error == ERROR_OPERATION_ABORTED)
+                                return 0;
+                            throw new IOException(GetWin32ErrorMessage(error), error);
+                        }
 
+                        // 使用带取消的异步等待
                         await WaitHandleAsync(waitHandle, cancellationToken);
-
                         if (cancellationToken.IsCancellationRequested)
-                            throw new OperationCanceledException();
+                            return 0;
 
                         if (!GetOverlappedResult(_handle, ref overlapped, out bytesWritten, true))
                         {
                             error = Marshal.GetLastWin32Error();
                             if (error == ERROR_OPERATION_ABORTED)
-                                throw new OperationCanceledException();
-                            throw new IOException("异步写入失败", error);
+                                return 0;
+                            throw new IOException(GetWin32ErrorMessage(error), error);
                         }
                     }
                     return bytesWritten;
