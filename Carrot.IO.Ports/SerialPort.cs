@@ -16,7 +16,7 @@ namespace Carrot.IO.Ports
         {
             // 打开串口
             _handle = CreateFile(
-                @"\\.\" + portName, // 支持 COM 号大于 9
+                @"\\.\" + portName,
                 FileAccess.ReadWrite,
                 FileShare.None,
                 IntPtr.Zero,
@@ -42,14 +42,19 @@ namespace Carrot.IO.Ports
                 throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
 
             // 配置超时
-            // 数据满，数据未满，无数据不等待直接返回：-1 0 0 0 0
+            // 超时配置      |   数据满     |   数据未满    |   无数据     |
+            // ---------------------------------------------------------
+            // -1 0 0 0 0   | 立刻返回      |  立刻返回     | 立刻返回    |
+            // -1 -1 -2 0 0 | 立刻返回      |  立刻返回     | 等待        |
+            // 2000 0 0 0 0 | 立刻返回      |  等待2000ms   | 等待2000ms |
+
             // 数据满，数据未满立刻返回, 无数据等待: -1 -1 -2 0 0
             // 数据满立刻返回，数据未满或无数据等待：Timeout 0 0 0 0
             COMMTIMEOUTS timeouts = new COMMTIMEOUTS
             {
                 ReadIntervalTimeout = -1,
-                ReadTotalTimeoutMultiplier = 0,
-                ReadTotalTimeoutConstant = 0,
+                ReadTotalTimeoutMultiplier = -1,
+                ReadTotalTimeoutConstant = -2,
                 WriteTotalTimeoutMultiplier = 0,
                 WriteTotalTimeoutConstant = 0
             };
