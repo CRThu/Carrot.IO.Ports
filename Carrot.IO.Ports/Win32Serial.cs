@@ -17,7 +17,7 @@ namespace Carrot.IO.Ports
             int dwFlagsAndAttributes,
             IntPtr hTemplateFile);
 
-        // 异步读
+        // 读取
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool ReadFile(
             SafeFileHandle hFile,
@@ -26,7 +26,7 @@ namespace Carrot.IO.Ports
             out int lpNumberOfBytesRead,
             ref OVERLAPPED lpOverlapped);
 
-        // 异步写
+        // 写入
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteFile(
             SafeFileHandle hFile,
@@ -39,6 +39,7 @@ namespace Carrot.IO.Ports
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool CancelIoEx(SafeFileHandle hFile, ref OVERLAPPED lpOverlapped);
 
+        // 读取串口参数
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool GetCommState(SafeFileHandle hFile, ref DCB lpDCB);
 
@@ -50,7 +51,7 @@ namespace Carrot.IO.Ports
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool SetCommTimeouts(SafeFileHandle hFile, ref COMMTIMEOUTS lpCommTimeouts);
 
-        // 设置缓冲区
+        // 配置缓冲区
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool SetupComm(
             SafeFileHandle hFile,
@@ -58,7 +59,8 @@ namespace Carrot.IO.Ports
             uint dwOutQueue
             );
 
-        // 结构体定义
+        // 串口配置DCB结构体
+        // https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-dcb
         [StructLayout(LayoutKind.Sequential)]
         public struct DCB
         {
@@ -74,6 +76,8 @@ namespace Carrot.IO.Ports
             // 其他字段省略，需根据需求补全
         }
 
+        // 串口超时配置结构体
+        // https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-commtimeouts
         [StructLayout(LayoutKind.Sequential)]
         public struct COMMTIMEOUTS
         {
@@ -112,6 +116,7 @@ namespace Carrot.IO.Ports
             return new Win32Exception(errorCode).Message;
         }
 
+        // 校验位
         public enum Parity
         {
             None = 0,
@@ -121,6 +126,7 @@ namespace Carrot.IO.Ports
             Space = 4
         }
 
+        // 停止位
         public enum StopBits
         {
             One = 0,
