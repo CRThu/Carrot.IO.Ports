@@ -21,7 +21,7 @@ namespace Carrot.IO.Ports
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool ReadFile(
             SafeFileHandle hFile,
-            byte[] lpBuffer,
+            IntPtr lpBuffer,
             int nNumberOfBytesToRead,
             out int lpNumberOfBytesRead,
             ref OVERLAPPED lpOverlapped);
@@ -30,7 +30,7 @@ namespace Carrot.IO.Ports
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteFile(
             SafeFileHandle hFile,
-            byte[] lpBuffer,
+            IntPtr lpBuffer,
             int nNumberOfBytesToWrite,
             out int lpNumberOfBytesWritten,
             ref OVERLAPPED lpOverlapped);
@@ -49,6 +49,14 @@ namespace Carrot.IO.Ports
         // 配置超时
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool SetCommTimeouts(SafeFileHandle hFile, ref COMMTIMEOUTS lpCommTimeouts);
+
+        // 设置缓冲区
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetupComm(
+            SafeFileHandle hFile,
+            uint dwInQueue,
+            uint dwOutQueue
+            );
 
         // 结构体定义
         [StructLayout(LayoutKind.Sequential)]
@@ -94,6 +102,7 @@ namespace Carrot.IO.Ports
         public const int FILE_FLAG_OVERLAPPED = 0x40000000;
         public const uint GENERIC_READ = 0x80000000;
         public const uint GENERIC_WRITE = 0x40000000;
+        public const int ERROR_INVALID_PARAMETER = 87;
         public const int ERROR_IO_PENDING = 997;
         public const int ERROR_OPERATION_ABORTED = 995;
 
@@ -101,6 +110,22 @@ namespace Carrot.IO.Ports
         public static string GetWin32ErrorMessage(int errorCode)
         {
             return new Win32Exception(errorCode).Message;
+        }
+
+        public enum Parity
+        {
+            None = 0,
+            Odd = 1,
+            Even = 2,
+            Mark = 3,
+            Space = 4
+        }
+
+        public enum StopBits
+        {
+            One = 0,
+            OnePointFive = 1,
+            Two = 2
         }
     }
 }

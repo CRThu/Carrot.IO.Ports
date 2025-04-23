@@ -12,7 +12,13 @@ namespace Carrot.IO.Ports
         private readonly ConcurrentDictionary<IntPtr, OVERLAPPED> _pendingOperations = new();
         private readonly object _ioLock = new();
 
-        public SerialPort(string portName, int baudRate, int dataBits = 8/*, Parity parity = Parity.None, StopBits stopBits = StopBits.One*/)
+        public SerialPort(string portName,
+            int baudRate,
+            int dataBits = 8,
+            Parity parity = Parity.None,
+            StopBits stopBits = StopBits.One,
+            uint readBufferSize = 8192,
+            uint writeBufferSize = 8192)
         {
             // 打开串口
             _handle = CreateFile(
@@ -27,7 +33,10 @@ namespace Carrot.IO.Ports
             if (_handle.IsInvalid)
                 throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
 
-            //// 配置 DCB
+            if (!SetupComm(_handle, readBufferSize, writeBufferSize))
+                throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
+
+            // 配置 DCB
             DCB dcb = new();
             if (!GetCommState(_handle, ref dcb))
                 throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
@@ -35,8 +44,13 @@ namespace Carrot.IO.Ports
 
             dcb.BaudRate = (uint)baudRate;
             dcb.ByteSize = (byte)dataBits;
-            //dcb.Parity = (byte)parity;
-            //dcb.StopBits = (byte)(stopBits == StopBits.One ? 0 : stopBits == StopBits.Two ? 2 : 1);
+            dcb.Parity = (byte)parity;
+            dcb.StopBits = (byte)stopBits;
+
+            if (parity != Parity.None)
+                dcb.Flags |= 0x0020U;    // fParity=1
+            else
+                dcb.Flags &= ~0x0020U;    // fParity=0
 
             if (!SetCommState(_handle, ref dcb))
                 throw new IOException(GetWin32ErrorMessage(Marshal.GetLastWin32Error()), Marshal.GetLastWin32Error());
@@ -60,8 +74,17 @@ namespace Carrot.IO.Ports
         }
 
         // 可取消异步读取
-        public async Task<int> ReadAsync(byte[] buffer/*, int offset*/, int count, CancellationToken cancellationToken = default)
+        public async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
         {
+            if (buffer == null)
+                throw new ArgumentNullException(nameof(buffer));
+            if (offset < 0 || count < 0 || offset + count > buffer.Length)
+                throw new ArgumentOutOfRangeException(nameof(offset), "Invalid offset/count combination");
+
+            GCHandle pinnedBuffer = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+
+            IntPtr bufferPtr = IntPtr.Add(pinnedBuffer.AddrOfPinnedObject(), offset);
+
             var overlapped = new OVERLAPPED();
             var waitHandle = new ManualResetEvent(false);
             overlapped.hEvent = waitHandle.SafeWaitHandle.DangerousGetHandle();
@@ -84,7 +107,7 @@ namespace Carrot.IO.Ports
                         _pendingOperations.TryAdd(key, overlapped);
                         immediateSuccess = ReadFile(
                             _handle,
-                            buffer,
+                            bufferPtr,
                             count,
                             out bytesRead,
                             ref overlapped);
@@ -121,13 +144,23 @@ namespace Carrot.IO.Ports
             {
                 _pendingOperations.TryRemove(key, out _);
                 waitHandle.Dispose();
+                pinnedBuffer.Free();
             }
         }
 
 
         // 可取消异步写入
-        public async Task<int> WriteAsync(byte[] buffer/*, int offset*/, int count, CancellationToken cancellationToken)
+        public async Task<int> WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
+            if (buffer == null)
+                throw new ArgumentNullException(nameof(buffer));
+            if (offset < 0 || count < 0 || offset + count > buffer.Length)
+                throw new ArgumentOutOfRangeException(nameof(offset), "Invalid offset/count combination");
+
+            GCHandle pinnedBuffer = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+
+            IntPtr bufferPtr = IntPtr.Add(pinnedBuffer.AddrOfPinnedObject(), offset);
+
             var overlapped = new OVERLAPPED();
             var waitHandle = new ManualResetEvent(false);
             overlapped.hEvent = waitHandle.SafeWaitHandle.DangerousGetHandle();
@@ -150,7 +183,7 @@ namespace Carrot.IO.Ports
                         _pendingOperations.TryAdd(key, overlapped);
                         immediateSuccess = WriteFile(
                             _handle,
-                            buffer,
+                            bufferPtr,
                             count,
                             out bytesWritten,
                             ref overlapped);
@@ -187,6 +220,7 @@ namespace Carrot.IO.Ports
             {
                 _pendingOperations.TryRemove(key, out _);
                 waitHandle.Dispose();
+                pinnedBuffer.Free();
             }
         }
 
