@@ -17,12 +17,24 @@ Asynchronous serial communication library for Windows using Overlapped I/O, supp
 ```csharp
 public SerialPort(
     string portName,
-    int baudRate,
+    int baudRate = 115200,
     int dataBits = 8,
     Parity parity = Parity.None,
     StopBits stopBits = StopBits.One,
-    uint readBufferSize = 8192,
-    uint writeBufferSize = 8192)
+    int readBufferSize = 8192,
+    int writeBufferSize = 8192,
+    TimeoutModel timeoutModel = TimeoutModel.WaitAny,
+    int timeout = 2000)
+``` 
+
+### Open 
+```csharp
+public void Open()
+``` 
+
+### Close 
+```csharp
+public void Close()
 ``` 
 
 ### ReadAsync 
@@ -35,8 +47,10 @@ Task<int> WriteAsync(byte[] buffer, int offset, int count, CancellationToken can
 ``` 
 
 ## ⏰ Timeout Behavior 
-| Scenario                        | Behavior Description                     |
-|----------------------------------|-----------------------------------------|
-| Start read on empty buffer       | Wait indefinitely until data arrives (cancellable)    |
-| All data arrives during read     | Return immediately with available data  |
-| Partial data arrives (less than requested bytes) | Return immediately with available data |
+
+
+| TimeoutModel | Start read on empty buffer | Partial data arrives (less than requested bytes) | All data arrives during read |
+|-|-|-|-|
+| TimeoutModel.Immediately | Return 0 bytes                         |Return immediately                     | Return immediately    |
+| TimeoutModel.WaitAny     | Wait until data arrives (cancellable)  | Return immediately                    | Return immediately    |
+| TimeoutModel.WaitAll     | Wait until data arrives (cancellable)  | Wait until data arrives (cancellable) | Return immediately    |
