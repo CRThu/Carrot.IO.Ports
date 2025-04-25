@@ -269,7 +269,7 @@ namespace Carrot.IO.Ports
             foreach (var key in _pendingOperations.Keys.ToArray())
             {
                 if (_pendingOperations.TryGetValue(key, out OVERLAPPED overlapped))
-                    CancelIoEx(_handle, ref overlapped);
+                    CancelIoEx(_handle!, ref overlapped);
             }
             _handle?.Close();
         }
@@ -302,14 +302,14 @@ namespace Carrot.IO.Ports
 
                     lock (_ioLock)
                     {
-                        if (_handle.IsClosed)
+                        if (!IsOpen)
                             throw new ObjectDisposedException(nameof(SerialPort), "串口已被关闭");
                         if (cancellationToken.IsCancellationRequested)
                             return 0;
 
                         _pendingOperations.TryAdd(key, overlapped);
                         immediateSuccess = ReadFile(
-                            _handle,
+                            _handle!,
                             bufferPtr,
                             count,
                             out bytesRead,
@@ -332,7 +332,7 @@ namespace Carrot.IO.Ports
                         if (cancellationToken.IsCancellationRequested)
                             return 0;
 
-                        if (!GetOverlappedResult(_handle, ref overlapped, out bytesRead, true))
+                        if (!GetOverlappedResult(_handle!, ref overlapped, out bytesRead, true))
                         {
                             error = Marshal.GetLastWin32Error();
                             if (error == ERROR_OPERATION_ABORTED)
@@ -379,14 +379,14 @@ namespace Carrot.IO.Ports
 
                     lock (_ioLock)
                     {
-                        if (_handle.IsClosed)
+                        if (!IsOpen)
                             throw new ObjectDisposedException(nameof(SerialPort), "串口已被关闭");
                         if (cancellationToken.IsCancellationRequested)
                             return 0;
 
                         _pendingOperations.TryAdd(key, overlapped);
                         immediateSuccess = WriteFile(
-                            _handle,
+                            _handle!,
                             bufferPtr,
                             count,
                             out bytesWritten,
@@ -409,7 +409,7 @@ namespace Carrot.IO.Ports
                         if (cancellationToken.IsCancellationRequested)
                             return 0;
 
-                        if (!GetOverlappedResult(_handle, ref overlapped, out bytesWritten, true))
+                        if (!GetOverlappedResult(_handle!, ref overlapped, out bytesWritten, true))
                         {
                             error = Marshal.GetLastWin32Error();
                             if (error == ERROR_OPERATION_ABORTED)
@@ -455,7 +455,8 @@ namespace Carrot.IO.Ports
         {
             if (_pendingOperations.TryGetValue(operationKey, out OVERLAPPED overlapped))
             {
-                CancelIoEx(_handle, ref overlapped);
+                if (_handle != null)
+                    CancelIoEx(_handle, ref overlapped);
             }
         }
 
