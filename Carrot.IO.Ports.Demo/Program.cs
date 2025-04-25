@@ -20,17 +20,35 @@ namespace Carrot.IO.Ports.Demo
             {
                 port.Open();
 
-                // 发送数据
-                Console.WriteLine($"[{DateTime.Now}]: 发送测试");
+                // 同步发送数据
+                Console.WriteLine($"[{DateTime.Now}]: 同步发送测试");
                 byte[] sendData = Encoding.ASCII.GetBytes("AT+TEST\r\n");
+                int bytesWrite = port.Write(sendData, 0, sendData.Length);
+
+                // 同步接收数据
+                Console.WriteLine($"[{DateTime.Now}]: 异步接收测试,按任意键开始");
+                Console.ReadKey();
+                Console.WriteLine($"[{DateTime.Now}]: 异步接收测试,运行中");
+                byte[] buffer = new byte[1024];
+                int bytesRead = port.Read(buffer, 0, buffer.Length);
+                if (bytesRead > 0)
+                {
+                    Console.WriteLine($"[{DateTime.Now}]: 收到 {bytesRead} 字节数据:{Encoding.ASCII.GetString(buffer, 0, bytesRead)}");
+                }
+                else
+                {
+                    Console.WriteLine($"[{DateTime.Now}]: 无数据");
+                }
+
+                // 异步发送数据
+                Console.WriteLine($"[{DateTime.Now}]: 异步发送测试");
                 await port.WriteAsync(sendData, 0, sendData.Length, CancellationToken.None);
 
-                // 接收数据
-                Console.WriteLine($"[{DateTime.Now}]: 接收测试,按任意键开始");
-                //Console.ReadKey();
-                Console.WriteLine($"[{DateTime.Now}]: 接收测试,运行中");
-                byte[] buffer = new byte[1024];
-                int bytesRead = await port.ReadAsync(buffer, 0, buffer.Length);
+                // 异步接收数据
+                Console.WriteLine($"[{DateTime.Now}]: 异步接收测试,按任意键开始");
+                Console.ReadKey();
+                Console.WriteLine($"[{DateTime.Now}]: 异步接收测试,运行中");
+                bytesRead = await port.ReadAsync(buffer, 0, buffer.Length);
                 if (bytesRead > 0)
                 {
                     Console.WriteLine($"[{DateTime.Now}]: 收到 {bytesRead} 字节数据:{Encoding.ASCII.GetString(buffer, 0, bytesRead)}");
@@ -44,13 +62,13 @@ namespace Carrot.IO.Ports.Demo
 
                 // 手动取消示例
                 Console.WriteLine($"[{DateTime.Now}]: 取消测试,按任意键开始");
-                //Console.ReadKey();
+                Console.ReadKey();
                 Console.WriteLine($"[{DateTime.Now}]: 取消测试,运行中");
                 var cts = new CancellationTokenSource(5000);
                 try
                 {
-                    int bytesRead2 = await port.ReadAsync(buffer, 0, buffer.Length, cts.Token);
-                    Console.WriteLine($"[{DateTime.Now}]: 收到 {bytesRead2} 字节数据:{Encoding.ASCII.GetString(buffer, 0, bytesRead)}");
+                    bytesRead = await port.ReadAsync(buffer, 0, buffer.Length, cts.Token);
+                    Console.WriteLine($"[{DateTime.Now}]: 收到 {bytesRead} 字节数据:{Encoding.ASCII.GetString(buffer, 0, bytesRead)}");
                 }
                 catch (OperationCanceledException)
                 {

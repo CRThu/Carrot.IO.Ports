@@ -274,86 +274,38 @@ namespace Carrot.IO.Ports
             _handle?.Close();
         }
 
+        private enum OpType
+        {
+            Read,
+            Write
+        }
+
+        // 同步读取
+        public int Read(byte[] buffer, int offset, int count)
+        {
+            return IOOperationAsync(buffer, offset, count, OpType.Read, CancellationToken.None).Result;
+        }
+
+        // 同步写入
+        public int Write(byte[] buffer, int offset, int count)
+        {
+            return IOOperationAsync(buffer, offset, count, OpType.Write, CancellationToken.None).Result;
+        }
+
         // 可取消异步读取
         public async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
         {
-            if (!IsOpen)
-                throw new InvalidOperationException("port is closed.");
-            if (buffer == null)
-                throw new ArgumentNullException(nameof(buffer));
-            if (offset < 0 || count < 0 || offset + count > buffer.Length)
-                throw new ArgumentOutOfRangeException(nameof(offset), "Invalid offset/count combination");
-
-            GCHandle pinnedBuffer = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-
-            IntPtr bufferPtr = IntPtr.Add(pinnedBuffer.AddrOfPinnedObject(), offset);
-
-            var overlapped = new OVERLAPPED();
-            var waitHandle = new ManualResetEvent(false);
-            overlapped.hEvent = waitHandle.SafeWaitHandle.DangerousGetHandle();
-            IntPtr key = overlapped.hEvent;
-
-            try
-            {
-                using (cancellationToken.Register(() => CancelOperation(key)))
-                {
-                    int bytesRead;
-                    bool immediateSuccess;
-
-                    lock (_ioLock)
-                    {
-                        if (!IsOpen)
-                            throw new ObjectDisposedException(nameof(SerialPort), "串口已被关闭");
-                        if (cancellationToken.IsCancellationRequested)
-                            return 0;
-
-                        _pendingOperations.TryAdd(key, overlapped);
-                        immediateSuccess = ReadFile(
-                            _handle!,
-                            bufferPtr,
-                            count,
-                            out bytesRead,
-                            ref overlapped);
-                    }
-
-                    if (!immediateSuccess)
-                    {
-                        int error = Marshal.GetLastWin32Error();
-                        if (error != ERROR_IO_PENDING)
-                        {
-                            // 立即失败的情况
-                            if (error == ERROR_OPERATION_ABORTED)
-                                return 0;
-                            throw new IOException(GetWin32ErrorMessage(error), error);
-                        }
-
-                        // 使用带取消的异步等待
-                        await WaitHandleAsync(waitHandle, cancellationToken);
-                        if (cancellationToken.IsCancellationRequested)
-                            return 0;
-
-                        if (!GetOverlappedResult(_handle!, ref overlapped, out bytesRead, true))
-                        {
-                            error = Marshal.GetLastWin32Error();
-                            if (error == ERROR_OPERATION_ABORTED)
-                                return 0;
-                            throw new IOException(GetWin32ErrorMessage(error), error);
-                        }
-                    }
-                    return bytesRead;
-                }
-            }
-            finally
-            {
-                _pendingOperations.TryRemove(key, out _);
-                waitHandle.Dispose();
-                pinnedBuffer.Free();
-            }
+            return await IOOperationAsync(buffer, offset, count, OpType.Read, cancellationToken);
         }
 
         // 可取消异步写入
         public async Task<int> WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
+            return await IOOperationAsync(buffer, offset, count, OpType.Write, cancellationToken);
+        }
+
+        private async Task<int> IOOperationAsync(byte[] buffer, int offset, int count, OpType op, CancellationToken cancellationToken)
+        {
             if (!IsOpen)
                 throw new InvalidOperationException("port is closed.");
             if (buffer == null)
@@ -374,7 +326,7 @@ namespace Carrot.IO.Ports
             {
                 using (cancellationToken.Register(() => CancelOperation(key)))
                 {
-                    int bytesWritten;
+                    int numOfBytes;
                     bool immediateSuccess;
 
                     lock (_ioLock)
@@ -385,12 +337,25 @@ namespace Carrot.IO.Ports
                             return 0;
 
                         _pendingOperations.TryAdd(key, overlapped);
-                        immediateSuccess = WriteFile(
-                            _handle!,
-                            bufferPtr,
-                            count,
-                            out bytesWritten,
-                            ref overlapped);
+
+                        if (op == OpType.Read)
+                        {
+                            immediateSuccess = ReadFile(
+                                _handle!,
+                                bufferPtr,
+                                count,
+                                out numOfBytes,
+                                ref overlapped);
+                        }
+                        else
+                        {
+                            immediateSuccess = WriteFile(
+                                _handle!,
+                                bufferPtr,
+                                count,
+                                out numOfBytes,
+                                ref overlapped);
+                        }
                     }
 
                     if (!immediateSuccess)
@@ -409,7 +374,7 @@ namespace Carrot.IO.Ports
                         if (cancellationToken.IsCancellationRequested)
                             return 0;
 
-                        if (!GetOverlappedResult(_handle!, ref overlapped, out bytesWritten, true))
+                        if (!GetOverlappedResult(_handle!, ref overlapped, out numOfBytes, true))
                         {
                             error = Marshal.GetLastWin32Error();
                             if (error == ERROR_OPERATION_ABORTED)
@@ -417,7 +382,7 @@ namespace Carrot.IO.Ports
                             throw new IOException(GetWin32ErrorMessage(error), error);
                         }
                     }
-                    return bytesWritten;
+                    return numOfBytes;
                 }
             }
             finally
@@ -430,6 +395,14 @@ namespace Carrot.IO.Ports
 
         private async Task WaitHandleAsync(WaitHandle waitHandle, CancellationToken ct)
         {
+            // Sync Impl
+            if (ct == CancellationToken.None)
+            {
+                waitHandle.WaitOne();
+                return;
+            }
+
+            // Async Impl
             var tcs = new TaskCompletionSource<bool>();
             using (ct.Register(() => tcs.TrySetCanceled()))
             {
@@ -455,8 +428,11 @@ namespace Carrot.IO.Ports
         {
             if (_pendingOperations.TryGetValue(operationKey, out OVERLAPPED overlapped))
             {
-                if (_handle != null)
-                    CancelIoEx(_handle, ref overlapped);
+                lock (_ioLock)
+                {
+                    if (IsOpen)
+                        CancelIoEx(_handle!, ref overlapped);
+                }
             }
         }
 
