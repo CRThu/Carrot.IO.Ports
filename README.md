@@ -1,15 +1,15 @@
 # Carrot.IO.Ports 
 
-Asynchronous serial communication library for Windows using Overlapped I/O, supporting cancellation and async read/write operations. 
+Asynchronous serial communication library for Windows using Overlapped I/O, supporting cancellation and sync/async read/write operations. 
 
 ## Compatibility 
 
 | Device Model          | Status       | Behavior Description                          |
 |-----------------------|--------------|-----------------------------------------------|
-| Virtual COM Port (VSPD) | ✔️ Full      | Matches expected behavior                    |
-| CH340 Series          | ✔️ Full      | Matches expected behavior                      |
-| CH343 Series          | ⚠️ Partial   | Immediate response on data arrival             |
-| FTDI FT2232H           | ✔️ Full      | Matches expected behavior                      |
+| Virtual COM Port (VSPD) | ✔️ Full      | Matches expected behavior                   |
+| CH340 Series          | ✔️ Full      | Matches expected behavior                     |
+| CH343 Series          | ⚠️ Partial   | Immediate response on data arrival           |
+| FTDI FT2232H           | ✔️ Full      | Matches expected behavior                    |
 
 ## 📚 API Reference
 
@@ -37,12 +37,16 @@ public void Open()
 public void Close()
 ``` 
 
-### ReadAsync 
+### Read/ReadAsync 
 ```csharp
+int Read(byte[] buffer, int offset, int count)
+
 Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
 ``` 
-### WriteAsync 
+### Write/WriteAsync 
 ```csharp
+int Write(byte[] buffer, int offset, int count)
+
 Task<int> WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
 ``` 
 
@@ -51,6 +55,6 @@ Task<int> WriteAsync(byte[] buffer, int offset, int count, CancellationToken can
 
 | TimeoutModel | Start read on empty buffer | Partial data arrives (less than requested bytes) | All data arrives during read |
 |-|-|-|-|
-| TimeoutModel.Immediately | Return 0 bytes                         |Return immediately                     | Return immediately    |
-| TimeoutModel.WaitAny     | Wait until data arrives (cancellable)  | Return immediately                    | Return immediately    |
-| TimeoutModel.WaitAll     | Wait until data arrives (cancellable)  | Wait until data arrives (cancellable) | Return immediately    |
+| TimeoutModel.Immediately          | Return 0 bytes                         |Return immediately                     | Return immediately    |
+| TimeoutModel.WaitAny(default)     | Wait until data arrives (cancellable)  | Return immediately                    | Return immediately    |
+| TimeoutModel.WaitAll              | Wait until data arrives (cancellable)  | Wait until data arrives (cancellable) | Return immediately    |

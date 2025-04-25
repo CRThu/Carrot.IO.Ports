@@ -283,13 +283,13 @@ namespace Carrot.IO.Ports
         // 同步读取
         public int Read(byte[] buffer, int offset, int count)
         {
-            return IOOperationAsync(buffer, offset, count, OpType.Read, CancellationToken.None).Result;
+            return IOOperationAsync(buffer, offset, count, OpType.Read, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         // 同步写入
         public int Write(byte[] buffer, int offset, int count)
         {
-            return IOOperationAsync(buffer, offset, count, OpType.Write, CancellationToken.None).Result;
+            return IOOperationAsync(buffer, offset, count, OpType.Write, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         // 可取消异步读取
@@ -370,7 +370,7 @@ namespace Carrot.IO.Ports
                         }
 
                         // 使用带取消的异步等待
-                        await WaitHandleAsync(waitHandle, cancellationToken);
+                        await WaitHandleAsync(waitHandle, cancellationToken).ConfigureAwait(false);
                         if (cancellationToken.IsCancellationRequested)
                             return 0;
 
@@ -415,7 +415,7 @@ namespace Carrot.IO.Ports
 
                 try
                 {
-                    await tcs.Task;
+                    await tcs.Task.ConfigureAwait(false);
                 }
                 finally
                 {
